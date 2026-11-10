@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PKeys Finance</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f7f6; --card: #fff; --text: #2d3436; --muted: #8a949a;
+    --green: #2ecc71; --green-d: #27ae60; --blue: #3498db; --red: #e74c3c;
+    --red-bg: #ffe9e9; --green-bg: #e3fcef; --yellow: #f1c40f; --border: #e6ebee;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  .wrap { max-width: 720px; margin: auto; padding: 16px; }
+  .card { background: var(--card); padding: 22px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,.05); margin-bottom: 18px; }
+  h1, h2, h3 { margin: 0 0 12px; }
+  small, .muted { color: var(--muted); }
+  input, select, button { width: 100%; padding: 12px; margin: 6px 0; border-radius: 8px; border: 1px solid #ddd; font-size: 15px; font-family: inherit; }
+  button { background: var(--green); color: #fff; border: none; font-weight: 600; cursor: pointer; }
+  button:hover { background: var(--green-d); }
+  button:disabled { background: #cfd6d9; cursor: not-allowed; }
+  button.blue { background: var(--blue); }
+  button.red { background: var(--red); }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button.small { width: auto; padding: 6px 12px; font-size: 13px; margin: 0; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .stats { display: flex; gap: 10px; margin: 12px 0; }
+  .stat { flex: 1; text-align: center; padding: 12px 8px; border-radius: 10px; }
+  .stat.spent { background: var(--red-bg); color: #d63031; }
+  .stat.rest { background: var(--green-bg); color: var(--green-d); }
+  .stat.info { background: #eaf4fd; color: #2574a9; }
+  .stat strong { font-size: 18px; display: block; margin-top: 4px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .brand { font-size: 20px; font-weight: 700; }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .who { display: flex; align-items: center; gap: 10px; }
+  nav.tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 16px; padding-bottom: 4px; }
+  nav.tabs button { width: auto; white-space: nowrap; background: #fff; color: var(--text); border: 1px solid var(--border); margin: 0; padding: 10px 14px; }
+  nav.tabs button.active { background: var(--green); color: #fff; border-color: var(--green); }
+  .list { list-style: none; padding: 0; margin: 0; }
+  .item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #eee; }
+  .item:last-child { border-bottom: none; }
+  .bar { height: 10px; background: #edf1f2; border-radius: 6px; overflow: hidden; margin-top: 6px; }
+  .bar > div { height: 100%; background: var(--green); border-radius: 6px; transition: width .3s; }
+  .bar.over > div { background: var(--red); }
+  .bar.warn > div { background: var(--yellow); }
+  .alert { padding: 12px 14px; border-radius: 10px; margin: 10px 0; font-size: 14px; }
+  .alert.bad { background: var(--red-bg); color: #b33939; }
+  .alert.good { background: var(--green-bg); color: #1e8449; }
+  .auth { max-width: 420px; margin: 8vh auto 0; }
+  .switch { display: flex; margin-bottom: 14px; }
+  .switch button { background: #eef2f3; color: var(--text); border-radius: 0; margin: 0; }
+  .switch button:first-child { border-radius: 8px 0 0 8px; }
+  .switch button:last-child { border-radius: 0 8px 8px 0; }
+  .switch button.active { background: var(--green); color: #fff; }
+  .err { color: var(--red); font-size: 14px; margin: 4px 0; }
+  .gauge { display: flex; align-items: center; gap: 16px; }
+  .gauge svg { flex: none; }
+  .big { font-size: 26px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* ---------- Көмекші функциялар ---------- */
+const DEFAULT_CATS = ['Тамақ', 'Көлік', 'Ойын-сауық', 'Тұрмыс'];
+const COLORS = ['#ff7675', '#74b9ff', '#ffeaa7', '#55efc4', '#a29bfe', '#fab1a0', '#81ecec', '#fd79a8'];
+const CUR = '₸';
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const fmt = n => Math.round(n || 0).toLocaleString('ru-RU');
+const pad = n => String(n).padStart(2, '0');
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const monthOf = s => s.slice(0, 7);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const emptyData = () => ({ budget: 0, expenses: [], goals: [], wishlist: [], limits: {}, savedByWaiting: 0 });
+
+async function hashPw(pw) {
+  const s = 'pkeys:' + pw;
+  try {
+    if (window.crypto && crypto.subtle) {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (e) {}
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return 'f' + h;
+}
+
+/* ---------- Кіру / тіркелу ---------- */
+function AuthScreen({ onAuth }) {
+  const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [pw, setPw] = useState('');
+  const [error, setError] = useState('');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    const mail = email.trim().toLowerCase();
+    const users = store.get('pk_users', []);
+    if (pw.length < 6) return setError('Құпия сөз кемінде 6 таңба болуы керек');
+    const hash = await hashPw(pw);
+    if (mode === 'register') {
+      if (!name.trim()) return setError('Атыңызды жазыңыз');
+      if (users.some(u => u.email === mail)) return setError('Бұл email тіркелген');
+      const user = { id: uid(), name: name.trim(), email: mail, hash, created: todayStr() };
+      store.set('pk_users', [...users, user]);
+      onAuth(user);
+    } else {
+      const user = users.find(u => u.email === mail && u.hash === hash);
+      if (!user) return setError('Email немесе құпия сөз қате');
+      onAuth(user);
+    }
+  };
+
+  return (
+    <div className="wrap">
+      <div className="card auth">
+        <h1>💰 PKeys Finance</h1>
+        <p className="muted">Қаржыңызды ақылды басқарыңыз</p>
+        <div className="switch">
+          <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Кіру</button>
+          <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Тіркелу</button>
+        </div>
+        <form onSubmit={submit}>
+          {mode === 'register' && <input placeholder="Аты-жөніңіз" value={name} onChange={e => setName(e.target.value)} />}
+          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
+          <input type="password" placeholder="Құпия сөз (6+ таңба)" value={pw} onChange={e => setPw(e.target.value)} required />
+          {error && <div className="err">{error}</div>}
+          <button type="submit">{mode === 'login' ? 'Кіру' : 'Аккаунт жасау'}</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Диаграмма ---------- */
+function DonutChart({ labels, values }) {
+  const ref = useRef(null);
+  const chart = useRef(null);
+  const key = JSON.stringify([labels, values]);
+  useEffect(() => {
+    if (!window.Chart || !ref.current) return;
+    if (chart.current) chart.current.destroy();
+    chart.current = new Chart(ref.current.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data: values, backgroundColor: COLORS }] },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+    return () => { if (chart.current) { chart.current.destroy(); chart.current = null; } };
+  }, [key]);
+  if (!values.length) return <p className="muted">Бұл айда шығын жоқ</p>;
+  return <div style={{ height: 260 }}><canvas ref={ref} /></div>;
+}
+
+/* ---------- Қаржылық денсаулық шкаласы ---------- */
+function Gauge({ score }) {
+  const r = 38, c = 2 * Math.PI * r;
+  const color = score >= 70 ? '#2ecc71' : score >= 40 ? '#f1c40f' : '#e74c3c';
+  return (
+    <svg width="96" height="96" viewBox="0 0 96 96">
+      <circle cx="48" cy="48" r={r} fill="none" stroke="#edf1f2" strokeWidth="10" />
+      <circle cx="48" cy="48" r={r} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
+        strokeDasharray={`${(score / 100) * c} ${c}`} transform="rotate(-90 48 48)" />
+      <text x="48" y="54" textAnchor="middle" fontSize="22" fontWeight="700" fill="#2d3436">{score}</text>
+    </svg>
+  );
+}
+
+/* ---------- Басты бет ---------- */
+function Dashboard({ data, setData, month, setMonth, cats }) {
+  const [amount, setAmount] = useState('');
+  const [mode, setMode] = useState('add');
+  const [limCat, setLimCat] = useState(cats[0]);
+  const [limAmt, setLimAmt] = useState('');
+
+  const monthExp = data.expenses.filter(e => monthOf(e.date) === month);
+  const spent = monthExp.reduce((s, e) => s + e.amount, 0);
+  const remaining = data.budget - spent;
+
+  const isCurrent = month === todayStr().slice(0, 7);
+  const [y, m] = month.split('-').map(Number);
+  const dim = new Date(y, m, 0).getDate();
+  const day = isCurrent ? new Date().getDate() : dim;
+  const daysLeft = isCurrent ? dim - day + 1 : 0;
+  const safeDaily = isCurrent && daysLeft > 0 ? Math.max(0, remaining) / daysLeft : null;
+  const forecast = isCurrent ? (spent / day) * dim : spent;
+
+  const byCat = {};
+  monthExp.forEach(e => { byCat[e.category] = (byCat[e.category] || 0) + e.amount; });
+  const labels = Object.keys(byCat);
+  const values = labels.map(l => byCat[l]);
+
+  // Қаржылық денсаулық
+  let score = null;
+  if (data.budget > 0) {
+    const ratio = forecast / data.budget;
+    const pace = ratio <= 0.8 ? 100 : ratio >= 1.3 ? 0 : 100 - ((ratio - 0.8) / 0.5) * 100;
+    const limited = Object.keys(data.limits);
+    const ok = limited.length ? limited.filter(c => (byCat[c] || 0) <= data.limits[c]).length / limited.length * 100 : 100;
+    score = Math.round(pace * 0.7 + ok * 0.3);
+  }
+  const scoreText = score === null ? 'Бағалау үшін бюджет орнатыңыз' :
+    score >= 70 ? 'Тамаша! Бюджет бақылауда' : score >= 40 ? 'Абай болыңыз, шығын жылдам өсіп жатыр' : 'Қауіпті: бюджеттен асу мүмкін';
+
+  const submitBudget = (e) => {
+    e.preventDefault();
+    const a = parseFloat(amount);
+    if (!a || a < 0) return;
+    setData(d => ({ ...d, budget: mode === 'add' ? d.budget + a : a }));
+    setAmount('');
+  };
+  const submitLimit = (e) => {
+    e.preventDefault();
+    const a = parseFloat(limAmt);
+    if (!a || a <= 0) return;
+    setData(d => ({ ...d, limits: { ...d.limits, [limCat]: a } }));
+    setLimAmt('');
+  };
+  const removeLimit = (c) => setData(d => { const l = { ...d.limits }; delete l[c]; return { ...d, limits: l }; });
+
+  return (
+    <>
+      <div className="card">
+        <h2>Айлық бюджет: {fmt(data.budget)} {CUR}</h2>
+        <div className="stats">
+          <div className="stat spent"><small>Жұмсалды</small><strong>{fmt(spent)} {CUR}</strong></div>
+          <div className="stat rest"><small>Қалды</small><strong>{fmt(remaining)} {CUR}</strong></div>
+        </div>
+        <form onSubmit={submitBudget}>
+          <input type="number" placeholder="Сомма" value={amount} onChange={e => setAmount(e.target.value)} required />
+          <select value={mode} onChange={e => setMode(e.target.value)}>
+            <option value="add">Бюджетке қосу (+)</option>
+            <option value="update">Жаңа бюджет орнату</option>
+          </select>
+          <button type="submit">Бюджетті жаңарту</button>
+        </form>
+      </div>
+
+      <div className="card">
+        <h3>🧠 Ақылды болжам</h3>
+        <div className="gauge">
+          {score !== null && <Gauge score={score} />}
+          <div>
+            <strong>Қаржылық денсаулық</strong>
+            <div className="muted">{scoreText}</div>
+          </div>
+        </div>
+        <div className="stats">
+          {safeDaily !== null && (
+            <div className="stat info"><small>Бүгін қауіпсіз шығын</small><strong>{fmt(safeDaily)} {CUR}</strong><small>{daysLeft} күн қалды</small></div>
+          )}
+          <div className="stat info"><small>Ай соңындағы болжам</small><strong>{fmt(forecast)} {CUR}</strong></div>
+        </div>
+        {data.budget > 0 && isCurrent && (
+          forecast > data.budget
+            ? <div className="alert bad">Осы қарқынмен ай соңында бюджеттен {fmt(forecast - data.budget)} {CUR} артық жұмсайсыз.</div>
+            : <div className="alert good">Осы қарқынмен ай соңына дейін шамамен {fmt(data.budget - forecast)} {CUR} қалады.</div>
+        )}
+        {data.savedByWaiting > 0 && (
+          <div className="alert good">⏳ «24 сағат ережесі» арқасында үнемделді: <strong>{fmt(data.savedByWaiting)} {CUR}</strong></div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Айлық есеп</h3>
+        <input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} />
+        <DonutChart labels={labels} values={values} />
+      </div>
+
+      <div className="card">
+        <h3>Категория лимиттері</h3>
+        <form onSubmit={submitLimit} className="row">
+          <select value={limCat} onChange={e => setLimCat(e.target.value)}>
+            {cats.map(c => <option key={c}>{c}</option>)}
+          </select>
+          <input type="number" placeholder="Лимит" value={limAmt} onChange={e => setLimAmt(e.target.value)} />
+          <button type="submit" className="blue">Қою</button>
+        </form>
+        <ul className="list">
+          {Object.keys(data.limits).length === 0 && <li className="muted">Лимит қойылмаған</li>}
+          {Object.keys(data.limits).map(c => {
+            const lim = data.limits[c], used = byCat[c] || 0, p = Math.min(100, used / lim * 100);
+            return (
+              <li key={c} style={{ padding: '8px 0', borderBottom: '1px solid #eee' }}>
+                <div className="item" style={{ border: 'none', padding: 0 }}>
+                  <span>{c}: {fmt(used)} / {fmt(lim)} {CUR}</span>
+                  <button className="small ghost" onClick={() => removeLimit(c)}>✕</button>
+                </div>
+                <div className={'bar ' + (used > lim ? 'over' : p > 80 ? 'warn' : '')}><div style={{ width: p + '%' }} /></div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Шығындар ---------- */
+function Expenses({ data, setData, month, setMonth, cats }) {
+  const [sel, setSel] = useState(DEFAULT_CATS[0]);
+  const [custom, setCustom] = useState('');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [date, setDate] = useState(todayStr());
+
+  const add = (e) => {
+    e.preventDefault();
+    const a = parseFloat(amount);
+    if (!a || a <= 0) return;
+    const category = custom.trim() || sel;
+    setData(d => ({ ...d, expenses: [{ id: uid(), category, amount: a, date, note: note.trim() }, ...d.expenses] }));
+    setAmount(''); setCustom(''); setNote('');
+  };
+  const del = (id) => setData(d => ({ ...d, expenses: d.expenses.filter(x => x.id !== id) }));
+  const clear = () => { if (confirm('Барлық шығындарды өшіруге сенімдісіз бе?')) setData(d => ({ ...d, expenses: [] })); };
+
+  const list = data.expenses.filter(e => monthOf(e.date) === month).sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <>
+      <div className="card">
+        <h3>Шығын қосу</h3>
+        <form onSubmit={add}>
+          <select value={sel} onChange={e => setSel(e.target.value)}>
+            {cats.map(c => <option key={c}>{c}</option>)}
+          </select>
+          <input placeholder="Немесе өз категорияңызды жазыңыз" value={custom} onChange={e => setCustom(e.target.value)} />
+          <input type="number" placeholder="Қанша жұмсадыңыз?" value={amount} onChange={e => setAmount(e.target.value)} required />
+          <input placeholder="Ескертпе (міндетті емес)" value={note} onChange={e => setNote(e.target.value)} />
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+          <button type="submit" className="blue">Шығынды тіркеу</button>
+        </form>
+      </div>
+      <div className="card">
+        <h3>Шығындар тарихы</h3>
+        <input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} />
+        <ul className="list">
+          {list.length === 0 && <li className="muted">Шығын жоқ</li>}
+          {list.map(x => (
+            <li key={x.id} className="item">
+              <span>{x.category} <small>({x.date})</small>{x.note && <><br /><small>{x.note}</small></>}</span>
+              <span><strong>- {fmt(x.amount)} {CUR}</strong> <button className="small ghost" onClick={() => del(x.id)}>✕</button></span>
+            </li>
+          ))}
+        </ul>
+        <button className="red" onClick={clear}>Барлығын тазалау</button>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Мақсаттар ---------- */
+function GoalCard({ goal, onDeposit, onDelete }) {
+  const [add, setAdd] = useState('');
+  const p = Math.min(100, goal.saved / goal.target * 100);
+  let hint = null;
+  if (goal.deadline && goal.saved < goal.target) {
+    const days = Math.ceil((new Date(goal.deadline + 'T23:59:59') - new Date()) / 86400000);
+    hint = days > 0
+      ? `Мерзімге жету үшін күніне ${fmt((goal.target - goal.saved) / days)} ${CUR} жинаңыз (${days} күн)`
+      : 'Мерзім өтіп кетті';
+  }
+  return (
+    <div style={{ padding: '12px 0', borderBottom: '1px solid #eee' }}>
+      <div className="item" style={{ border: 'none', padding: 0 }}>
+        <strong>{goal.saved >= goal.target ? '🎉 ' : '🎯 '}{goal.name}</strong>
+        <button className="small ghost" onClick={onDelete}>✕</button>
+      </div>
+      <div className="muted">{fmt(goal.saved)} / {fmt(goal.target)} {CUR} ({Math.round(p)}%)</div>
+      <div className="bar"><div style={{ width: p + '%' }} /></div>
+      {hint && <small>{hint}</small>}
+      <form className="row" onSubmit={e => { e.preventDefault(); const a = parseFloat(add); if (a > 0) { onDeposit(a); setAdd(''); } }}>
+        <input type="number" placeholder="Қосу сомасы" value={add} onChange={e => setAdd(e.target.value)} />
+        <button type="submit" className="small" style={{ flex: '0 0 110px' }}>Салу</button>
+      </form>
+    </div>
+  );
+}
+
+function Goals({ data, setData }) {
+  const [name, setName] = useState('');
+  const [target, setTarget] = useState('');
+  const [deadline, setDeadline] = useState('');
+
+  const add = (e) => {
+    e.preventDefault();
+    const t = parseFloat(target);
+    if (!name.trim() || !t || t <= 0) return;
+    setData(d => ({ ...d, goals: [...d.goals, { id: uid(), name: name.trim(), target: t, saved: 0, deadline }] }));
+    setName(''); setTarget(''); setDeadline('');
+  };
+  return (
+    <>
+      <div className="card">
+        <h3>Жаңа мақсат</h3>
+        <form onSubmit={add}>
+          <input placeholder="Мақсат атауы (мыс. Ноутбук)" value={name} onChange={e => setName(e.target.value)} required />
+          <input type="number" placeholder="Қажетті сома" value={target} onChange={e => setTarget(e.target.value)} required />
+          <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
+          <small>Мерзімді көрсетсеңіз, күніне қанша жинау керегін есептеймін</small>
+          <button type="submit">Мақсат қосу</button>
+        </form>
+      </div>
+      <div className="card">
+        <h3>Менің мақсаттарым</h3>
+        {data.goals.length === 0 && <p className="muted">Әзірге мақсат жоқ</p>}
+        {data.goals.map(g => (
+          <GoalCard key={g.id} goal={g}
+            onDeposit={a => setData(d => ({ ...d, goals: d.goals.map(x => x.id === g.id ? { ...x, saved: x.saved + a } : x) }))}
+            onDelete={() => setData(d => ({ ...d, goals: d.goals.filter(x => x.id !== g.id) }))} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* ---------- 24 сағат ережесі ---------- */
+const DAY = 24 * 3600 * 1000;
+
+function Wishlist({ data, setData }) {
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
+
+  const add = (e) => {
+    e.preventDefault();
+    const p = parseFloat(price);
+    if (!name.trim() || !p || p <= 0) return;
+    setData(d => ({ ...d, wishlist: [...d.wishlist, { id: uid(), name: name.trim(), price: p, addedAt: Date.now() }] }));
+    setName(''); setPrice('');
+  };
+  const buy = (w) => setData(d => ({
+    ...d,
+    expenses: [{ id: uid(), category: 'Сатып алу', amount: w.price, date: todayStr(), note: w.name }, ...d.expenses],
+    wishlist: d.wishlist.filter(x => x.id !== w.id)
+  }));
+  const skip = (w) => setData(d => ({
+    ...d, savedByWaiting: d.savedByWaiting + w.price, wishlist: d.wishlist.filter(x => x.id !== w.id)
+  }));
+  const left = (w) => {
+    const ms = Math.max(0, w.addedAt + DAY - now);
+    return `${Math.floor(ms / 3600000)} сағ ${Math.floor((ms % 3600000) / 60000)} мин`;
+  };
+
+  return (
+    <>
+      <div className="card">
+        <h3>⏳ 24 сағат ережесі</h3>
+        <p className="muted">Импульсивті сатып алудан сақтайды: затты тізімге қосыңыз, 24 сағаттан кейін әлі керек болса ғана алыңыз. Алмасаңыз — сома «үнемделді» болып есептеледі.</p>
+        <form onSubmit={add}>
+          <input placeholder="Не алғыңыз келеді?" value={name} onChange={e => setName(e.target.value)} required />
+          <input type="number" placeholder="Бағасы" value={price} onChange={e => setPrice(e.target.value)} required />
+          <button type="submit">Күту тізіміне қосу</button>
+        </form>
+      </div>
+      <div className="card">
+        <h3>Күту тізімі</h3>
+        {data.wishlist.length === 0 && <p className="muted">Тізім бос</p>}
+        <ul className="list">
+          {data.wishlist.map(w => {
+            const ready = now - w.addedAt >= DAY;
+            return (
+              <li key={w.id} style={{ padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                <strong>{w.name}</strong> — {fmt(w.price)} {CUR}
+                <div className="muted">{ready ? '✅ 24 сағат өтті. Әлі керек пе?' : `Күту: ${left(w)}`}</div>
+                <div className="row">
+                  <button className="small" disabled={!ready} onClick={() => buy(w)}>Сатып алдым</button>
+                  <button className="small ghost" onClick={() => skip(w)}>Керек емес, үнемдедім</button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <p>Барлығы үнемделді: <strong>{fmt(data.savedByWaiting)} {CUR}</strong></p>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Профиль ---------- */
+function Profile({ user, setUser, data, onLogout, onDelete }) {
+  const [name, setName] = useState(user.name);
+  const [saved, setSaved] = useState(false);
+
+  const save = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const users = store.get('pk_users', []).map(u => u.id === user.id ? { ...u, name: name.trim() } : u);
+    store.set('pk_users', users);
+    setUser({ ...user, name: name.trim() });
+    setSaved(true); setTimeout(() => setSaved(false), 1500);
+  };
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'pkeys-finance.json';
+    a.click();
+  };
+  const total = data.expenses.reduce((s, e) => s + e.amount, 0);
+
+  return (
+    <>
+      <div className="card">
+        <h3>Жеке кабинет</h3>
+        <div className="who" style={{ marginBottom: 10 }}>
+          <div className="avatar">{user.name[0].toUpperCase()}</div>
+          <div><strong>{user.name}</strong><br /><small>{user.email}</small></div>
+        </div>
+        <small>Тіркелген күні: {user.created}</small>
+        <div className="stats">
+          <div className="stat info"><small>Шығын саны</small><strong>{data.expenses.length}</strong></div>
+          <div className="stat info"><small>Барлық шығын</small><strong>{fmt(total)} {CUR}</strong></div>
+          <div className="stat info"><small>Мақсаттар</small><strong>{data.goals.length}</strong></div>
+        </div>
+        <form onSubmit={save}>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Аты-жөніңіз" />
+          <button type="submit">{saved ? 'Сақталды ✓' : 'Атын сақтау'}</button>
+        </form>
+      </div>
+      <div className="card">
+        <h3>Деректер мен аккаунт</h3>
+        <button className="blue" onClick={exportData}>Деректерді жүктеу (JSON)</button>
+        <button className="ghost" onClick={onLogout}>Шығу</button>
+        <button className="red" onClick={() => { if (confirm('Аккаунт пен барлық деректер өшіріледі. Сенімдісіз бе?')) onDelete(); }}>Аккаунтты өшіру</button>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Кабинет ---------- */
+function Cabinet({ user, setUser, onLogout, onDelete }) {
+  const key = 'pk_data_' + user.id;
+  const [data, setData] = useState(() => ({ ...emptyData(), ...store.get(key, {}) }));
+  const [tab, setTab] = useState('home');
+  const [month, setMonth] = useState(todayStr().slice(0, 7));
+
+  useEffect(() => { store.set(key, data); }, [data]);
+
+  const cats = useMemo(() => {
+    const set = new Set(DEFAULT_CATS);
+    data.expenses.forEach(e => set.add(e.category));
+    Object.keys(data.limits).forEach(c => set.add(c));
+    return Array.from(set);
+  }, [data.expenses, data.limits]);
+
+  const tabs = [['home', 'Басты бет'], ['exp', 'Шығындар'], ['goals', 'Мақсаттар'], ['wait', '24 сағат'], ['me', 'Профиль']];
+
+  return (
+    <div className="wrap">
+      <header className="top">
+        <div className="brand">💰 PKeys Finance</div>
+        <div className="who"><span>{user.name}</span><div className="avatar">{user.name[0].toUpperCase()}</div></div>
+      </header>
+      <nav className="tabs">
+        {tabs.map(([k, l]) => <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l}</button>)}
+      </nav>
+      {tab === 'home' && <Dashboard data={data} setData={setData} month={month} setMonth={setMonth} cats={cats} />}
+      {tab === 'exp' && <Expenses data={data} setData={setData} month={month} setMonth={setMonth} cats={cats} />}
+      {tab === 'goals' && <Goals data={data} setData={setData} />}
+      {tab === 'wait' && <Wishlist data={data} setData={setData} />}
+      {tab === 'me' && <Profile user={user} setUser={setUser} data={data} onLogout={onLogout} onDelete={onDelete} />}
+    </div>
+  );
+}
+
+/* ---------- Қолданба ---------- */
+function App() {
+  const [user, setUser] = useState(() => {
+    const id = store.get('pk_session', null);
+    return store.get('pk_users', []).find(u => u.id === id) || null;
+  });
+  const login = (u) => { store.set('pk_session', u.id); setUser(u); };
+  const logout = () => { store.del('pk_session'); setUser(null); };
+  const remove = () => {
+    store.set('pk_users', store.get('pk_users', []).filter(u => u.id !== user.id));
+    store.del('pk_data_' + user.id);
+    logout();
+  };
+  if (!user) return <AuthScreen onAuth={login} />;
+  return <Cabinet key={user.id} user={user} setUser={setUser} onLogout={logout} onDelete={remove} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
